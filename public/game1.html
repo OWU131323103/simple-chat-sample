@@ -4,66 +4,154 @@
     <meta charset="utf-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>センサからの信号受信</title>
+    <title>ペンギンスケートゲーム</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.8.0/p5.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.1.3/socket.io.js"></script>
+    <style>
+      body {
+        background: linear-gradient(135deg, #c2e9fb, #a1c4fd);
+        font-family: "Segoe UI", sans-serif;
+        text-align: center;
+      }
+      h1 { color: #333; }
+      #gameContainer {
+        display: inline-block;
+        margin-top: 10px;
+        border: 3px solid #fff;
+        border-radius: 20px;
+        box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+        overflow: hidden;
+      }
+      canvas { display: block; }
+      #myid { color: #333; font-weight: bold; }
+      #connect {
+        background: #6ec1e4; color: white; font-size: 18px;
+        border: none; padding: 10px 20px; border-radius: 10px;
+        margin: 10px; cursor: pointer; transition: 0.3s;
+      }
+      #connect:hover { background: #4ea3cc; }
+    </style>
   </head>
+
   <body>
-    <h1>スマホからのセンサ情報を受信</h1>
-    <div>
-      <div>あなたのID: <span id="myid"></span></div>
-      <button id="connect">接続開始</button>
-      <div>受信した情報はコンソールログで確認してください</div>
-    </div>
+    <h1>ペンギンが氷をよけてゴール！</h1>
+    <div>あなたのID: <span id="myid"></span></div>
+    <button id="connect">接続開始</button>
+    <div>スマホを傾けてペンギンを操作しよう！</div>
+    <div id="gameContainer"></div>
+
     <script>
       let socket = io.connect();
-      
-      let myid = sessionStorage.getItem('clientId');
+      let myid = sessionStorage.getItem("clientId");
       if (!myid) {
-        myid = Math.random().toString(36).substring(2, 15);
-        sessionStorage.setItem('clientId', myid);
+        myid = Math.random().toString(36).substring(2,15);
+        sessionStorage.setItem("clientId", myid);
       }
-      
       document.querySelector("#myid").innerHTML = myid;
-      console.log("あなたのID: ", myid);
-      
-      let g = 0;
-      let b = 0;
 
-      let btn = document.querySelector("#connect");
+      let g=0, b=0;
+      let connected=false;
+      let btn=document.querySelector("#connect");
 
-      btn.addEventListener("click", function () {
-        socket.emit("join", "game");
+      btn.addEventListener("click", function() {
+        socket.emit("join","game");
         btn.remove();
+        connected=true;
       });
 
-      socket.on("sensor", function (data) {
-        g = parseFloat(data.g);
-        b = parseFloat(data.b);
-        console.log(b);
+      socket.on("sensor", function(data){
+        if(connected){
+          g=parseFloat(data.g);
+          b=parseFloat(data.b);
+        }
       });
 
-      let targetX;
-      let targetY;
-      function setup() {
-        createCanvas(500, 500);
-        background(200);
-        targetX = random(width);
-        targetY = random(height);
+      // --- p5.js ---
+      let penguinImg, iceImg;
+      let playerX=250, playerY=450;
+      let obstacles=[];
+      let goalY=50;
+      let gameOver=false, win=false;
+
+      function preload(){
+        penguinImg = loadImage("pengin.png");
+        iceImg = loadImage("ice.png");
       }
 
-      let x = 250;
-      let y = 250;
+      function setup(){
+        let canvas = createCanvas(500,500);
+        canvas.parent("gameContainer");
 
-      function draw() {
-        background(200);
-        circle(targetX,targetY,30,30);
-        x += g*0.02;
-        y += b*0.02;
-        if ( dist(x,y, targetX, targetY) < 10 ) background(0);  // (dist(x,y, targetX, targetY) < 10)
-        circle(x, y, 50);
+        for(let i=0;i<5;i++){
+          let scale = 50/iceImg.width; // 幅50に合わせて縮小
+          let w = iceImg.width*scale;
+          let h = iceImg.height*scale;
+          obstacles.push({
+            x: random(50,450),
+            y: random(100,400),
+            w: w,
+            h: h,
+            speed: random(1,3)*(random()<0.5?-1:1)
+          });
+        }
+        textAlign(CENTER,CENTER);
+        textSize(24);
       }
 
+      function draw(){
+        background(230,245,255);
+
+        // ゴールライン
+        fill(120,255,120);
+        rect(0,goalY-20,width,10);
+        textSize(18); fill(0);
+        text("GOAL", width/2, goalY-40);
+
+        if(gameOver){
+          fill(255,0,0);
+          textSize(40);
+          text("GAME OVER💥", width/2,height/2);
+          noLoop(); return;
+        }
+        if(win){
+          fill(0,150,255);
+          textSize(40);
+          text("GOAL!! 🎉", width/2,height/2);
+          noLoop(); return;
+        }
+
+        // 障害物（氷）を左右にゆらゆら
+        for(let obs of obstacles){
+          obs.x += obs.speed;
+          if(obs.x < obs.w/2 || obs.x > width-obs.w/2) obs.speed*=-1;
+          image(iceImg, obs.x-obs.w/2, obs.y-obs.h/2, obs.w, obs.h);
+        }
+
+        // プレイヤー（ペンギン）
+        image(penguinImg, playerX-20, playerY-20, 70, 70);
+
+        // 移動
+        playerX += g*0.2;
+        playerY += b*0.2;
+        playerX = constrain(playerX,20,width-20);
+        playerY = constrain(playerY,20,height-20);
+
+        // 衝突判定
+        for(let obs of obstacles){
+          if(
+            playerX+20 > obs.x-obs.w/2 &&
+            playerX-20 < obs.x+obs.w/2 &&
+            playerY+20 > obs.y-obs.h/2 &&
+            playerY-20 < obs.y+obs.h/2
+          ){
+            gameOver=true;
+          }
+        }
+
+        // ゴール判定
+        if(playerY<goalY) win=true;
+      }
     </script>
   </body>
 </html>
+
